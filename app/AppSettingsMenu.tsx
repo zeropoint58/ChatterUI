@@ -1,16 +1,21 @@
-import Alert from '@components/Alert'
-import SectionTitle from '@components/SectionTitle'
-import SwitchWithDescription from '@components/SwitchWithDescription'
+import ThemedButton from '@components/buttons/ThemedButton'
+import ThemedSwitch from '@components/input/ThemedSwitch'
+import SectionTitle from '@components/text/SectionTitle'
+import Alert from '@components/views/Alert'
+import HeaderTitle from '@components/views/HeaderTitle'
+import { AppSettings } from '@lib/constants/GlobalValues'
+import { registerForPushNotificationsAsync } from '@lib/notifications/Notifications'
+import { Characters } from '@lib/state/Characters'
+import { Logger } from '@lib/state/Logger'
+import { Theme } from '@lib/theme/ThemeManager'
 import appConfig from 'app.config'
-import { AppSettings, Characters, Logger, Style } from 'constants/Global'
-import { registerForPushNotificationsAsync } from 'constants/Notifications'
 import { copyFile, DocumentDirectoryPath, DownloadDirectoryPath } from 'cui-fs'
 import { reloadAppAsync } from 'expo'
 import { getDocumentAsync } from 'expo-document-picker'
 import { copyAsync, deleteAsync, documentDirectory } from 'expo-file-system'
-import { Stack, useRouter } from 'expo-router'
+import { useRouter } from 'expo-router'
 import React from 'react'
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { ScrollView, Text, View } from 'react-native'
 import { useMMKVBoolean } from 'react-native-mmkv'
 
 const appVersion = appConfig.expo.version
@@ -21,9 +26,9 @@ const exportDB = async (notify: boolean = true) => {
         `${DownloadDirectoryPath}/${appVersion}-db-backup.db`
     )
         .then(() => {
-            if (notify) Logger.log('Download Successful!', true)
+            if (notify) Logger.infoToast('Download Successful!')
         })
-        .catch((e) => Logger.log('Failed to copy database: ' + e, true))
+        .catch((e) => Logger.errorToast('Failed to copy database: ' + e))
 }
 
 const importDB = async (uri: string, name: string) => {
@@ -37,11 +42,11 @@ const importDB = async (uri: string, name: string) => {
             to: `${documentDirectory}SQLite/db.db`,
         })
             .then(() => {
-                Logger.log('Copy Successful, Restarting now.')
+                Logger.info('Copy Successful, Restarting now.')
                 reloadAppAsync()
             })
             .catch((e) => {
-                Logger.log(`Failed to import database: ${e}`, true)
+                Logger.errorToast(`Failed to import database: ${e}`)
             })
     }
 
@@ -60,6 +65,7 @@ const importDB = async (uri: string, name: string) => {
 
 const AppSettingsMenu = () => {
     const router = useRouter()
+    const { color, spacing } = Theme.useTheme()
     const [printContext, setPrintContext] = useMMKVBoolean(AppSettings.PrintContext)
     const [firstMes, setFirstMes] = useMMKVBoolean(AppSettings.CreateFirstMes)
     const [chatOnStartup, setChatOnStartup] = useMMKVBoolean(AppSettings.ChatOnStartup)
@@ -82,81 +88,88 @@ const AppSettingsMenu = () => {
     )
     const [authLocal, setAuthLocal] = useMMKVBoolean(AppSettings.LocallyAuthenticateUser)
     const [unlockOrientation, setUnlockOrientation] = useMMKVBoolean(AppSettings.UnlockOrientation)
-    const [useLegacyAPI, setUseLegacyAPI] = useMMKVBoolean(AppSettings.UseLegacyAPI)
+
+    const [showTokensPerSecond, setShowTokensPerSecond] = useMMKVBoolean(
+        AppSettings.ShowTokenPerSecond
+    )
 
     return (
-        <ScrollView style={styles.mainContainer}>
-            <Stack.Screen options={{ title: 'App Settings' }} />
+        <ScrollView
+            style={{
+                marginVertical: spacing.xl2,
+                paddingHorizontal: spacing.xl2,
+                paddingBottom: spacing.xl3,
+            }}
+            contentContainerStyle={{ rowGap: spacing.sm }}>
+            <HeaderTitle title="Settings" />
 
-            <Text style={{ ...styles.sectionTitle, paddingTop: 0 }}>Style</Text>
+            <SectionTitle>Style</SectionTitle>
 
-            <TouchableOpacity
-                style={styles.button}
-                onPress={() => {
-                    router.push('/ColorSettings')
-                }}>
-                <Text style={styles.buttonText}>Customize Colors</Text>
-            </TouchableOpacity>
+            <ThemedButton
+                label="Change Theme"
+                variant="secondary"
+                onPress={() => router.push('/ColorSelector')}
+            />
 
             <SectionTitle>Chat</SectionTitle>
 
-            <SwitchWithDescription
-                title="Auto Scroll"
+            <ThemedSwitch
+                label="Auto Scroll"
                 value={autoScroll}
-                onValueChange={setAutoScroll}
+                onChangeValue={setAutoScroll}
                 description="Autoscrolls text during generations"
             />
 
-            <SwitchWithDescription
-                title="Use First Message"
+            <ThemedSwitch
+                label="Use First Message"
                 value={firstMes}
-                onValueChange={setFirstMes}
+                onChangeValue={setFirstMes}
                 description="Disabling this will make new chats start blank, needed by specific models"
             />
 
-            <SwitchWithDescription
-                title="Load Chat On Startup"
+            <ThemedSwitch
+                label="Load Chat On Startup"
                 value={chatOnStartup}
-                onValueChange={setChatOnStartup}
+                onChangeValue={setChatOnStartup}
                 description="Loads the most recent chat on startup"
             />
 
-            <SwitchWithDescription
-                title="Send on Enter"
+            <ThemedSwitch
+                label="Send on Enter"
                 value={sendOnEnter}
-                onValueChange={setSendOnEnter}
+                onChangeValue={setSendOnEnter}
                 description="Submits messages when Enter is pressed"
+            />
+
+            <ThemedSwitch
+                label="Show Tokens Per Second"
+                value={showTokensPerSecond}
+                onChangeValue={setShowTokensPerSecond}
+                description="Show tokens per second when using local models"
             />
 
             <SectionTitle>Generation</SectionTitle>
 
-            <SwitchWithDescription
-                title="Print Context"
+            <ThemedSwitch
+                label="Print Context"
                 value={printContext}
-                onValueChange={setPrintContext}
+                onChangeValue={setPrintContext}
                 description="Prints the generation context to logs for debugging"
             />
 
-            <SwitchWithDescription
-                title="Bypass Context Length"
+            <ThemedSwitch
+                label="Bypass Context Length"
                 value={bypassContextLength}
-                onValueChange={setBypassContextLength}
+                onChangeValue={setBypassContextLength}
                 description="Ignores context length limits when building prompts"
-            />
-
-            <SwitchWithDescription
-                title="Use Legacy API System"
-                value={useLegacyAPI}
-                onValueChange={setUseLegacyAPI}
-                description="Use old API system"
             />
 
             <SectionTitle>Notifications</SectionTitle>
 
-            <SwitchWithDescription
-                title="Enable Notifications"
+            <ThemedSwitch
+                label="Enable Notifications"
                 value={notificationOnGenerate}
-                onValueChange={async (value) => {
+                onChangeValue={async (value) => {
                     if (!value) {
                         setNotificationOnGenerate(false)
                         return
@@ -172,32 +185,33 @@ const AppSettingsMenu = () => {
 
             {notificationOnGenerate && (
                 <View>
-                    <SwitchWithDescription
-                        title="Notification Sound"
+                    <ThemedSwitch
+                        label="Notification Sound"
                         value={notificationSound}
-                        onValueChange={setNotificationSound}
+                        onChangeValue={setNotificationSound}
                         description=""
                     />
 
-                    <SwitchWithDescription
-                        title="Notification Vibration"
+                    <ThemedSwitch
+                        label="Notification Vibration"
                         value={notificationVibrate}
-                        onValueChange={setNotificationVibrate}
+                        onChangeValue={setNotificationVibrate}
                         description=""
                     />
 
-                    <SwitchWithDescription
-                        title="Show Text In Notification"
+                    <ThemedSwitch
+                        label="Show Text In Notification"
                         value={showNotificationText}
-                        onValueChange={setShowNotificationText}
+                        onChangeValue={setShowNotificationText}
                         description="Shows generated messages in notifications"
                     />
                 </View>
             )}
 
             <SectionTitle>Character Management</SectionTitle>
-            <TouchableOpacity
-                style={styles.button}
+            <ThemedButton
+                label="Regenerate Default Card"
+                variant="secondary"
                 onPress={() => {
                     Alert.alert({
                         title: `Regenerate Default Card`,
@@ -207,17 +221,21 @@ const AppSettingsMenu = () => {
                             { label: 'Create Default Card', onPress: Characters.createDefaultCard },
                         ],
                     })
-                }}>
-                <Text style={styles.buttonText}>Regenerate Default Card</Text>
-            </TouchableOpacity>
-
+                }}
+            />
             <SectionTitle>Database Management</SectionTitle>
 
-            <Text style={styles.subtitle}>
+            <Text
+                style={{
+                    color: color.text._500,
+                    paddingBottom: spacing.xs,
+                    marginBottom: spacing.m,
+                }}>
                 WARNING: only import if you are certain it's from the same version!
             </Text>
-            <TouchableOpacity
-                style={styles.button}
+            <ThemedButton
+                label="Export Database"
+                variant="secondary"
                 onPress={() => {
                     Alert.alert({
                         title: `Export Database`,
@@ -227,12 +245,12 @@ const AppSettingsMenu = () => {
                             { label: 'Export Database', onPress: exportDB },
                         ],
                     })
-                }}>
-                <Text style={styles.buttonText}>Export Database</Text>
-            </TouchableOpacity>
+                }}
+            />
 
-            <TouchableOpacity
-                style={styles.button}
+            <ThemedButton
+                label="Import Database"
+                variant="secondary"
                 onPress={async () => {
                     getDocumentAsync({ type: ['application/*'] }).then(async (result) => {
                         if (result.canceled) return
@@ -250,65 +268,28 @@ const AppSettingsMenu = () => {
                             ],
                         })
                     })
-                }}>
-                <Text style={styles.buttonText}>Import Database</Text>
-            </TouchableOpacity>
+                }}
+            />
 
             <SectionTitle>Security</SectionTitle>
-            <SwitchWithDescription
-                title="Lock App"
+            <ThemedSwitch
+                label="Lock App"
                 value={authLocal}
-                onValueChange={setAuthLocal}
+                onChangeValue={setAuthLocal}
                 description="Requires user authentication to open the app. This will not work if you have no device locks enabled."
             />
 
             <SectionTitle>Screen</SectionTitle>
-            <SwitchWithDescription
-                title="Unlock Orientation"
+            <ThemedSwitch
+                label="Unlock Orientation"
                 value={unlockOrientation}
-                onValueChange={setUnlockOrientation}
+                onChangeValue={setUnlockOrientation}
                 description="Allows landscape on phones (App restart required)"
             />
 
-            <View style={{ paddingVertical: 60 }} />
+            <View style={{ paddingVertical: spacing.xl3 }} />
         </ScrollView>
     )
 }
 
 export default AppSettingsMenu
-
-const styles = StyleSheet.create({
-    mainContainer: {
-        marginTop: 16,
-        paddingHorizontal: 20,
-        paddingBottom: 20,
-    },
-
-    button: {
-        paddingVertical: 8,
-        paddingHorizontal: 16,
-        backgroundColor: Style.getColor('primary-surface3'),
-        borderRadius: 8,
-        marginVertical: 8,
-    },
-
-    buttonText: {
-        color: Style.getColor('primary-text1'),
-    },
-
-    sectionTitle: {
-        color: Style.getColor('primary-text1'),
-        paddingTop: 12,
-        fontSize: 16,
-        paddingBottom: 6,
-        marginBottom: 8,
-        borderBottomWidth: 1,
-        borderColor: Style.getColor('primary-surface3'),
-    },
-
-    subtitle: {
-        color: Style.getColor('primary-text2'),
-        paddingBottom: 2,
-        marginBottom: 8,
-    },
-})
