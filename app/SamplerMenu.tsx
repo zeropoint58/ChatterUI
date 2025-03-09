@@ -1,69 +1,49 @@
-import Alert from '@components/Alert'
-import CheckboxTitle from '@components/CheckboxTitle'
-import FadeDownView from '@components/FadeDownView'
-import SliderInput from '@components/SliderInput'
-import TextBox from '@components/TextBox'
-import TextBoxModal from '@components/TextBoxModal'
-import { APISampler } from '@constants/APIState/BaseAPI'
-import { FontAwesome } from '@expo/vector-icons'
-import { APIState as APIStateNew } from 'constants/API/APIManagerState'
-import { APIState } from 'constants/APIState'
-import { API, Global, Logger, Presets, saveStringToDownload, Style } from 'constants/Global'
-import { AppMode, AppSettings } from 'constants/GlobalValues'
-import { SamplerConfigData, Samplers } from 'constants/SamplerData'
-import { Stack } from 'expo-router'
-import { useEffect, useState } from 'react'
-import { SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
-import { Dropdown } from 'react-native-element-dropdown'
-import { useMMKVBoolean, useMMKVObject, useMMKVString } from 'react-native-mmkv'
-
-type PresetLabel = {
-    label: string
-}
+import DropdownSheet from '@components/input/DropdownSheet'
+import ThemedCheckbox from '@components/input/ThemedCheckbox'
+import ThemedSlider from '@components/input/ThemedSlider'
+import ThemedTextInput from '@components/input/ThemedTextInput'
+import Alert from '@components/views/Alert'
+import FadeDownView from '@components/views/FadeDownView'
+import HeaderButton from '@components/views/HeaderButton'
+import HeaderTitle from '@components/views/HeaderTitle'
+import PopupMenu from '@components/views/PopupMenu'
+import TextBoxModal from '@components/views/TextBoxModal'
+import { Samplers } from '@lib/constants/SamplerData'
+import { APISampler } from '@lib/engine/API/APIBuilder.types'
+import { APIState as APIStateNew } from '@lib/engine/API/APIManagerState'
+import { localSamplerData } from '@lib/engine/LocalInference'
+import { useAppMode } from '@lib/state/AppMode'
+import { Logger } from '@lib/state/Logger'
+import { SamplersManager } from '@lib/state/SamplerState'
+import { Theme } from '@lib/theme/ThemeManager'
+import { saveStringToDownload } from '@lib/utils/File'
+import { useState } from 'react'
+import { ScrollView, StyleSheet, Text } from 'react-native'
 
 const SamplerMenu = () => {
-    const [APIType, setAPIType] = useMMKVString(Global.APIType)
-    const [appMode, setAppMode] = useMMKVString(Global.AppMode)
-    const [presetName, setPresetName] = useMMKVString(Global.PresetName)
-    const [currentPreset, setCurrentPreset] = useMMKVObject<SamplerConfigData>(Global.PresetData)
-    const [presetList, setPresetList] = useState<PresetLabel[]>([])
-    const [showNewPreset, setShowNewPreset] = useState<boolean>(false)
+    const styles = useStyles()
+    const { spacing } = Theme.useTheme()
+    const { appMode } = useAppMode()
+    const [showNewSampler, setShowNewSampler] = useState<boolean>(false)
 
-    const loadPresetList = (name: string = '') => {
-        Presets.getFileList().then((list) => {
-            const cleanlist = list.map((item) => {
-                return item.replace(`.json`, '')
-            })
-            const mainlist: any = cleanlist.map((item) => {
-                return { label: item }
-            })
-            setPresetList(mainlist)
-            // after deletion, preset may not exist and needs to be changed
-            if (cleanlist.includes(name)) return
-            setPresetName(cleanlist[0])
-            Presets.loadFile(cleanlist[0]).then((text) => setCurrentPreset(JSON.parse(text)))
-        })
-    }
+    const {
+        addSamplerConfig,
+        deleteSamplerConfig,
+        changeConfig,
+        updateCurrentConfig,
+        currentConfigIndex,
+        currentConfig,
+        configList,
+    } = SamplersManager.useSamplers()
 
-    useEffect(() => {
-        loadPresetList(presetName ?? '')
-        setSamplerList(getSamplerList())
-    }, [])
-
-    const [legacy, setLegacy] = useMMKVBoolean(AppSettings.UseLegacyAPI)
     const { apiValues, activeIndex, getTemplates } = APIStateNew.useAPIState((state) => ({
         apiValues: state.values,
         activeIndex: state.activeIndex,
         getTemplates: state.getTemplates,
     }))
 
-    const [samplerList, setSamplerList] = useState<APISampler[]>([])
-
     const getSamplerList = (): APISampler[] => {
-        if (appMode === AppMode.LOCAL) return APIState[API.LOCAL].samplers
-        if (legacy) {
-            return APIState[APIType as API].samplers
-        }
+        if (appMode === 'local') return localSamplerData
         if (activeIndex !== -1) {
             const template = getTemplates().find(
                 (item) => item.name === apiValues[activeIndex].configName
@@ -74,281 +54,238 @@ const SamplerMenu = () => {
         return []
     }
 
+    const handleExportSampler = () => {
+        saveStringToDownload(
+            JSON.stringify(currentConfig.data),
+            `${currentConfig.name}.json`,
+            'utf8'
+        ).then(() => {
+            Logger.infoToast('Downloaded Sampler Configuration!')
+        })
+    }
+
+    const handleImportSampler = () => {
+        //TODO : Implement
+        Logger.errorToast('Importing Not Implemented')
+    }
+
+    const handleDeleteSampler = () => {
+        if (configList.length === 1) {
+            Logger.errorToast(`Cannot Delete Last Configuration`)
+            return false
+        }
+
+        Alert.alert({
+            title: `Delete Sampler`,
+            description: `Are you sure you want to delete '${currentConfig.name}'?`,
+            buttons: [
+                { label: 'Cancel' },
+                {
+                    label: 'Delete Sampler',
+                    onPress: async () => {
+                        deleteSamplerConfig(currentConfigIndex)
+                    },
+                    type: 'warning',
+                },
+            ],
+        })
+        return true
+    }
+
+    const headerRight = () => (
+        <PopupMenu
+            icon="setting"
+            iconSize={24}
+            placement="bottom"
+            options={[
+                {
+                    label: 'Create Sampler',
+                    icon: 'addfile',
+                    onPress: (menu) => {
+                        setShowNewSampler(true)
+                        menu.current?.close()
+                    },
+                },
+                {
+                    label: 'Export Sampler',
+                    icon: 'download',
+                    onPress: (menu) => {
+                        handleExportSampler()
+                        menu.current?.close()
+                    },
+                },
+                /*{
+                    label: 'Import Sampler',
+                    icon: 'upload',
+                    onPress: (menu) => {
+                        handleImportSampler()
+                        menu.current?.close()
+                    },
+                },*/
+                {
+                    label: 'Delete Sampler',
+                    icon: 'delete',
+                    onPress: (menu) => {
+                        if (handleDeleteSampler()) menu.current?.close()
+                    },
+                    warning: true,
+                },
+            ]}
+        />
+    )
+
     return (
         <FadeDownView style={{ flex: 1 }}>
-            <SafeAreaView>
-                <TextBoxModal
-                    booleans={[showNewPreset, setShowNewPreset]}
-                    onConfirm={(text: string) => {
-                        if (text === '') {
-                            Logger.log(`Preset name cannot be empty`, true)
+            <TextBoxModal
+                booleans={[showNewSampler, setShowNewSampler]}
+                onConfirm={(text: string) => {
+                    if (text === '') {
+                        Logger.errorToast(`Sampler name cannot be empty`)
+                        return
+                    }
+
+                    for (const item of configList)
+                        if (item.name === text) {
+                            Logger.errorToast(`Sampler name already exists.`)
                             return
                         }
+                    addSamplerConfig({ name: text, data: currentConfig.data })
+                }}
+            />
 
-                        for (const item of presetList)
-                            if (item.label === text) {
-                                Logger.log(`Preset name already exists.`, true)
-                                return
-                            }
-                        if (currentPreset)
-                            Presets.saveFile(text, currentPreset).then(() => {
-                                Logger.log(`Preset created.`, true)
-                                loadPresetList(text)
-                                setPresetName((currentPreset) => text)
-                            })
-                    }}
-                />
+            <HeaderTitle title="Samplers" />
+            <HeaderButton headerRight={headerRight} />
 
-                <Stack.Screen
-                    options={{
-                        animation: 'fade',
-                        title: `Samplers`,
-                    }}
-                />
+            <DropdownSheet
+                containerStyle={{ marginHorizontal: spacing.xl, paddingVertical: spacing.m }}
+                selected={currentConfig}
+                data={configList}
+                onChangeValue={(item) => {
+                    if (item.name === currentConfig.name) return
+                    changeConfig(configList.indexOf(item))
+                }}
+                labelExtractor={(item) => item.name}
+            />
 
-                <View style={styles.dropdownContainer}>
-                    <Dropdown
-                        value={presetName}
-                        data={presetList}
-                        valueField="label"
-                        labelField="label"
-                        onChange={(item) => {
-                            if (item.label === presetName) return
-                            setPresetName(item.label)
-                            Presets.loadFile(item.label).then((preset) => {
-                                setCurrentPreset(JSON.parse(preset))
-                            })
-                        }}
-                        {...Style.drawer.default}
-                    />
-                    <TouchableOpacity
-                        style={styles.button}
-                        onPress={() => {
-                            if (presetName && currentPreset)
-                                Presets.saveFile(presetName, currentPreset).then(() =>
-                                    Logger.log(`Preset Updated!`, true)
-                                )
-                        }}>
-                        <FontAwesome
-                            size={24}
-                            name="save"
-                            color={Style.getColor('primary-text1')}
-                        />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.button}
-                        onPress={() => {
-                            if (presetList.length === 1) {
-                                Logger.log(`Cannot Delete Last Preset.`, true)
-                                return
-                            }
-
-                            Alert.alert({
-                                title: `Delete Preset`,
-                                description: `Are you sure you want to delete '${presetName}'?`,
-                                buttons: [
-                                    { label: 'Cancel' },
-                                    {
-                                        label: 'Delete Preset',
-                                        onPress: async () => {
-                                            presetName &&
-                                                Presets.deleteFile(presetName).then(() => {
-                                                    loadPresetList()
+            <ScrollView contentContainerStyle={styles.scrollContainer}>
+                {currentConfig &&
+                    getSamplerList().map((item, index) => {
+                        const samplerItem = Samplers?.[item.samplerID]
+                        if (!samplerItem)
+                            return (
+                                <Text style={styles.unsupported}>
+                                    Sampler ID {`[${item.samplerID}]`} Not Supported
+                                </Text>
+                            )
+                        switch (samplerItem.inputType) {
+                            case 'slider':
+                                return (
+                                    (samplerItem.values.type === 'float' ||
+                                        samplerItem.values.type === 'integer') && (
+                                        <ThemedSlider
+                                            key={item.samplerID}
+                                            value={
+                                                currentConfig.data[samplerItem.internalID] as number
+                                            }
+                                            onValueChange={(value) => {
+                                                updateCurrentConfig({
+                                                    ...currentConfig,
+                                                    data: {
+                                                        ...currentConfig.data,
+                                                        [samplerItem.internalID]: value,
+                                                    },
                                                 })
-                                        },
-                                        type: 'warning',
-                                    },
-                                ],
-                            })
-                        }}>
-                        <FontAwesome
-                            size={24}
-                            name="trash"
-                            color={Style.getColor('primary-text1')}
-                        />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.button}
-                        onPress={() => {
-                            Presets.uploadFile().then((name) => {
-                                if (name === undefined) {
-                                    return
-                                }
-                                Presets.loadFile(name).then((preset) => {
-                                    setCurrentPreset(JSON.parse(preset))
-                                    setPresetName(name)
-                                    loadPresetList(name)
-                                })
-                            })
-                        }}>
-                        <FontAwesome
-                            size={24}
-                            name="upload"
-                            color={Style.getColor('primary-text1')}
-                        />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.button}
-                        onPress={async () => {
-                            saveStringToDownload(
-                                JSON.stringify(currentPreset),
-                                `${presetName}.json`,
-                                'utf8'
-                            ).then(() => {
-                                Logger.log('Downloaded Sampler Preset!')
-                            })
-                        }}>
-                        <FontAwesome
-                            size={24}
-                            name="download"
-                            color={Style.getColor('primary-text1')}
-                        />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.button}
-                        onPress={() => {
-                            setShowNewPreset(true)
-                        }}>
-                        <FontAwesome
-                            size={24}
-                            name="plus"
-                            color={Style.getColor('primary-text1')}
-                        />
-                    </TouchableOpacity>
-                </View>
-
-                <ScrollView>
-                    <View style={styles.mainContainer}>
-                        {currentPreset &&
-                            samplerList?.map((item, index) => {
-                                const samplerItem = Samplers?.[item.samplerID]
-                                if (!samplerItem)
-                                    return (
-                                        <Text style={styles.unsupported}>
-                                            Sampler ID {`[${item.samplerID}]`} Not Supported
-                                        </Text>
+                                            }}
+                                            label={samplerItem.friendlyName}
+                                            min={samplerItem.values.min}
+                                            max={samplerItem.values.max}
+                                            step={samplerItem.values.step}
+                                            precision={samplerItem.values.precision ?? 2}
+                                        />
                                     )
-                                switch (samplerItem.inputType) {
-                                    case 'slider':
-                                        return (
-                                            (samplerItem.values.type === 'float' ||
-                                                samplerItem.values.type === 'integer') && (
-                                                <SliderInput
-                                                    key={item.samplerID}
-                                                    value={
-                                                        currentPreset[
-                                                            samplerItem.internalID
-                                                        ] as number
-                                                    }
-                                                    onValueChange={(value) => {
-                                                        setCurrentPreset({
-                                                            ...currentPreset,
-                                                            [samplerItem.internalID]: value,
-                                                        })
-                                                    }}
-                                                    label={samplerItem.friendlyName}
-                                                    min={samplerItem.values.min}
-                                                    max={samplerItem.values.max}
-                                                    step={samplerItem.values.step}
-                                                    precision={samplerItem.values.precision ?? 2}
-                                                />
-                                            )
-                                        )
-                                    case 'checkbox':
-                                        return (
-                                            <CheckboxTitle
-                                                value={currentPreset[item.samplerID] as boolean}
-                                                key={item.samplerID}
-                                                onChangeValue={(b) => {
-                                                    setCurrentPreset({
-                                                        ...currentPreset,
-                                                        [item.samplerID]: b,
-                                                    })
-                                                }}
-                                                name={samplerItem.friendlyName}
-                                            />
-                                        )
-                                    case 'textinput':
-                                        return (
-                                            <TextBox
-                                                key={item.samplerID}
-                                                varname={samplerItem.internalID}
-                                                body={currentPreset}
-                                                setValue={setCurrentPreset}
-                                                name={samplerItem.friendlyName}
-                                            />
-                                        )
-                                    //case 'custom':
-                                    default:
-                                        return (
-                                            <Text style={styles.warningText}>
-                                                Invalid Sampler Field!
-                                            </Text>
-                                        )
-                                }
-                            })}
-                    </View>
-                </ScrollView>
-            </SafeAreaView>
+                                )
+                            case 'checkbox':
+                                return (
+                                    <ThemedCheckbox
+                                        value={currentConfig.data[item.samplerID] as boolean}
+                                        key={item.samplerID}
+                                        onChangeValue={(b) => {
+                                            updateCurrentConfig({
+                                                ...currentConfig,
+                                                data: {
+                                                    ...currentConfig.data,
+                                                    [samplerItem.internalID]: b,
+                                                },
+                                            })
+                                        }}
+                                        label={samplerItem.friendlyName}
+                                    />
+                                )
+                            case 'textinput':
+                                return (
+                                    <ThemedTextInput
+                                        key={item.samplerID}
+                                        value={currentConfig.data[item.samplerID] as string}
+                                        onChangeText={(text) => {
+                                            updateCurrentConfig({
+                                                ...currentConfig,
+                                                data: {
+                                                    ...currentConfig.data,
+                                                    [item.samplerID]: text,
+                                                },
+                                            })
+                                        }}
+                                        label={samplerItem.friendlyName}
+                                    />
+                                )
+                            //case 'custom':
+                            default:
+                                return (
+                                    <Text style={styles.warningText}>Invalid Sampler Field!</Text>
+                                )
+                        }
+                    })}
+            </ScrollView>
         </FadeDownView>
     )
 }
 
 export default SamplerMenu
 
-const styles = StyleSheet.create({
-    mainContainer: {
-        margin: 16,
-        paddingBottom: 150,
-    },
+const useStyles = () => {
+    const { color, spacing } = Theme.useTheme()
+    return StyleSheet.create({
+        scrollContainer: {
+            paddingHorizontal: spacing.xl,
+            paddingVertical: spacing.xl2,
+            rowGap: spacing.xl,
+        },
 
-    dropdownContainer: {
-        marginHorizontal: 16,
-        marginTop: 16,
-        flexDirection: 'row',
-        paddingBottom: 12,
-        alignItems: 'center',
-    },
+        dropdownContainer: {
+            marginHorizontal: spacing.xl,
+        },
 
-    selected: {
-        color: Style.getColor('primary-text1'),
-    },
+        button: {
+            padding: spacing.s,
+            borderRadius: spacing.s,
+            marginLeft: spacing.m,
+        },
 
-    button: {
-        padding: 5,
-        borderRadius: 4,
-        marginLeft: 8,
-    },
+        warningText: {
+            color: color.text._100,
+            backgroundColor: color.error._500,
+            padding: spacing.m,
+            margin: spacing.xl,
+            borderRadius: spacing.m,
+        },
 
-    input: {
-        color: Style.getColor('primary-text1'),
-        backgroundColor: Style.getColor('primary-surface1'),
-        borderColor: Style.getColor('primary-surface4'),
-        borderWidth: 1,
-        paddingVertical: 4,
-        paddingHorizontal: 8,
-        marginVertical: 8,
-        marginHorizontal: 4,
-        borderRadius: 8,
-    },
-    warningText: {
-        color: Style.getColor('primary-text1'),
-        backgroundColor: Style.getColor('destructive-brand'),
-        padding: 8,
-        margin: 16,
-        borderRadius: 8,
-    },
-
-    unsupported: {
-        color: Style.getColor('primary-text2'),
-        textAlign: 'center',
-        paddingVertical: 8,
-        marginVertical: 8,
-        borderRadius: 8,
-        backgroundColor: Style.getColor('primary-surface2'),
-    },
-})
+        unsupported: {
+            color: color.text._400,
+            textAlign: 'center',
+            paddingVertical: spacing.m,
+            marginVertical: spacing.m,
+            borderRadius: spacing.m,
+            backgroundColor: color.neutral._300,
+        },
+    })
+}
