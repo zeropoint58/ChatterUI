@@ -4,13 +4,11 @@
         "strict": true,
         "baseUrl": ".",
         "paths": {
-            "@globals": ["constants/Global"],
             "@components/*": ["app/components/*"],
-            "@components": ["app/components"],
-            "@constants/*": ["constants/*"],
+            "@screens/*": ["app/screens/*"],
+            "@lib/*": ["lib/*"],
             "@assets/*": ["assets/*"],
             "@public/*": ["public/*"],
-            "@lib/*": ["lib/*"],
             "@db": ["db/db"]
         },
         "allowJs": true

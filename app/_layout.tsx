@@ -1,6 +1,6 @@
-import { AlertBox } from '@components/Alert'
+import { AlertBox } from '@components/views/Alert'
 import { rawdb } from '@db'
-import { Style } from '@globals'
+import { Theme } from '@lib/theme/ThemeManager'
 import { useDrizzleStudio } from 'expo-drizzle-studio-plugin'
 import { SplashScreen, Stack } from 'expo-router'
 import { setOptions } from 'expo-splash-screen'
@@ -18,6 +18,8 @@ setOptions({
 const Layout = () => {
     useDrizzleStudio(rawdb)
 
+    const { color } = Theme.useTheme()
+
     useEffect(() => {
         const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
             Keyboard.dismiss()
@@ -33,14 +35,14 @@ const Layout = () => {
             <MenuProvider>
                 <Stack
                     screenOptions={{
-                        headerStyle: { backgroundColor: Style.getColor('primary-surface1') },
-                        headerTitleStyle: { color: Style.getColor('primary-text1') },
-                        headerTintColor: Style.getColor('primary-text1'),
-                        contentStyle: { backgroundColor: Style.getColor('primary-surface1') },
+                        headerStyle: { backgroundColor: color.neutral._100 },
+                        headerTitleStyle: { color: color.text._100 },
+                        headerTintColor: color.text._100,
+                        contentStyle: { backgroundColor: color.neutral._100 },
                         headerShadowVisible: false,
                         headerTitleAlign: 'center',
                         presentation: 'transparentModal',
-                        statusBarBackgroundColor: Style.getColor('primary-surface1'),
+                        statusBarBackgroundColor: color.neutral._100,
                     }}>
                     <Stack.Screen name="index" options={{ animation: 'fade' }} />
                 </Stack>

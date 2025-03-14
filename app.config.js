@@ -5,16 +5,11 @@ module.exports = {
         name: IS_DEV ? 'ChatterUI (DEV)' : 'ChatterUI',
         newArchEnabled: true,
         slug: 'ChatterUI',
-        version: '0.8.3',
+        version: '0.8.5',
         orientation: 'default',
         icon: './assets/images/icon.png',
         scheme: 'chatterui',
         userInterfaceStyle: 'automatic',
-        /*splash: {
-            image: './assets/images/splash.png',
-            resizeMode: 'cover',
-            backgroundColor: '#000000',
-        },*/
         assetBundlePatterns: ['**/*'],
         ios: {
             supportsTablet: true,
@@ -28,12 +23,6 @@ module.exports = {
                 backgroundColor: '#000',
             },
             package: IS_DEV ? 'com.Vali98.ChatterUIDev' : 'com.Vali98.ChatterUI',
-
-            /*splash: {
-                image: './assets/images/splash.png',
-                resizeMode: 'cover',
-                backgroundColor: '#000000',
-            },*/
             userInterfaceStyle: 'dark',
             permissions: [
                 'android.permission.FOREGROUND_SERVICE',
@@ -54,7 +43,6 @@ module.exports = {
                     assetsDirName: 'appAssets',
                 },
             ],
-            'expo-router',
             [
                 'expo-build-properties',
                 {
@@ -82,13 +70,21 @@ module.exports = {
                     icon: './assets/images/notification.png',
                 },
             ],
+            [
+                './expo-build-plugins/androidattributes.plugin.js',
+                {
+                    'android:largeHeap': true,
+                },
+            ],
+            'expo-localization',
+            'expo-router',
+            'expo-sqlite',
             './expo-build-plugins/bgactions.plugin.js',
             './expo-build-plugins/copyjni.plugin.js',
             './expo-build-plugins/usercert.plugin.js',
         ],
         experiments: {
             typedRoutes: true,
-            // reactCompiler: true,
         },
         extra: {
             router: {

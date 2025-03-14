@@ -1,22 +1,46 @@
-import Alert from '@components/Alert'
-import Avatar from '@components/Avatar'
-import AvatarViewer from '@components/ChatMenu/ChatWindow/AvatarViewer'
-import FadeDownView from '@components/FadeDownView'
-import PopupMenu from '@components/PopupMenu'
+import ThemedButton from '@components/buttons/ThemedButton'
+import StringArrayEditor from '@components/input/StringArrayEditor'
+import ThemedTextInput from '@components/input/ThemedTextInput'
+import Alert from '@components/views/Alert'
+import Avatar from '@components/views/Avatar'
+import FadeDownView from '@components/views/FadeDownView'
+import HeaderTitle from '@components/views/HeaderTitle'
+import PopupMenu from '@components/views/PopupMenu'
+import { db } from '@db'
 import { AntDesign } from '@expo/vector-icons'
-import { useViewerState } from 'constants/AvatarViewer'
-import { CharacterCardData } from 'constants/Characters'
-import { Characters, Chats, Logger, Style } from 'constants/Global'
-import { Tokenizer } from 'constants/Tokenizer'
+import { Tokenizer } from '@lib/engine/Tokenizer'
+import { useViewerState } from '@lib/state/AvatarViewer'
+import { CharacterCardData, Characters } from '@lib/state/Characters'
+import { Chats } from '@lib/state/Chat'
+import { Logger } from '@lib/state/Logger'
+import { Theme } from '@lib/theme/ThemeManager'
+import { usePreventRemove } from '@react-navigation/core'
+import AvatarViewer from '@screens/ChatMenu/ChatWindow/AvatarViewer'
+import { characterTags, tags } from 'db/schema'
+import { count, eq } from 'drizzle-orm'
+import { useLiveQuery } from 'drizzle-orm/expo-sqlite'
 import * as DocumentPicker from 'expo-document-picker'
-import { Stack, useNavigation, useRouter } from 'expo-router'
-import { useEffect, useRef, useState } from 'react'
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { useNavigation, useRouter } from 'expo-router'
+import { useEffect, useState } from 'react'
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useShallow } from 'zustand/react/shallow'
 
 const ChracterEditor = () => {
+    const styles = useStyles()
+    const { color, spacing } = Theme.useTheme()
     const router = useRouter()
     const navigation = useNavigation()
+    const data = useLiveQuery(
+        db
+            .select({
+                tag: tags.tag,
+                id: tags.id,
+                tagCount: count(characterTags.tag_id),
+            })
+            .from(tags)
+            .leftJoin(characterTags, eq(characterTags.tag_id, tags.id))
+            .groupBy(tags.id)
+    )
     const { currentCard, setCurrentCard, charId, charName, unloadCharacter } =
         Characters.useCharacterCard(
             useShallow((state) => ({
@@ -28,18 +52,20 @@ const ChracterEditor = () => {
             }))
         )
 
-    const getTokenCount = Tokenizer.useTokenizer((state) => state.getTokenCount)
+    const getTokenCount = Tokenizer.useDefaultTokenizer((state) => state.getTokenCount)
     const [characterCard, setCharacterCard] = useState<CharacterCardData | undefined>(currentCard)
-
     const { chat, unloadChat } = Chats.useChat()
 
     const setShowViewer = useViewerState((state) => state.setShow)
-
     const [edited, setEdited] = useState(false)
-
     const [altSwipeIndex, setAltSwipeIndex] = useState(0)
 
-    const editedBackAction = (exitCallback: () => void) => {
+    const setCharacterCardEdited = (card: CharacterCardData) => {
+        if (!edited) setEdited(true)
+        setCharacterCard(card)
+    }
+
+    usePreventRemove(edited, ({ data }) => {
         Alert.alert({
             title: `Unsaved Changes`,
             description: `You have unsaved changes, leaving now will discard your progress.`,
@@ -48,63 +74,31 @@ const ChracterEditor = () => {
                 {
                     label: 'Save',
                     onPress: async () => {
-                        await savecard()
-                        if (!chat) unloadCharacter()
-                        exitCallback()
+                        await handleSaveCard()
+                        navigation.dispatch(data.action)
                     },
                 },
                 {
                     label: 'Discard Changes',
                     onPress: () => {
-                        if (!chat) unloadCharacter()
-                        exitCallback()
+                        navigation.dispatch(data.action)
                     },
                     type: 'warning',
                 },
             ],
         })
-        return true
-    }
+    })
 
-    const defaultListener = () => {
-        const removeListener = navigation.addListener('beforeRemove', (e) => {
-            if (!chat) unloadCharacter()
-            navigation.dispatch(e.data.action)
-        })
-        return removeListener
-    }
-
-    const removeListener = useRef(defaultListener())
-    const firstRender = useRef(true)
-
-    useEffect(() => {
-        if (firstRender.current) {
-            firstRender.current = false
-            return
-        }
-        setEdited(true)
-        removeListener.current()
-        removeListener.current = navigation.addListener('beforeRemove', (e) => {
-            e.preventDefault()
-            editedBackAction(() => {
-                if (!chat) unloadCharacter()
-                navigation.dispatch(e.data.action)
-            })
-        })
-    }, [characterCard])
-
-    const savecard = async () => {
+    const handleSaveCard = async () => {
         if (characterCard && charId)
             return Characters.db.mutate.updateCard(characterCard, charId).then(() => {
                 setCurrentCard(charId)
                 setEdited(() => false)
-                removeListener.current()
-                removeListener.current = defaultListener()
-                Logger.log('Card Saved!', true)
+                Logger.infoToast('Card Saved!')
             })
     }
 
-    const deleteCard = () => {
+    const handleDeleteCard = () => {
         Alert.alert({
             title: `Delete Character`,
             description: `Are you sure you want to delete '${charName}'? This cannot be undone.`,
@@ -116,13 +110,20 @@ const ChracterEditor = () => {
                         Characters.db.mutate.deleteCard(charId ?? -1)
                         unloadCharacter()
                         unloadChat()
-                        router.back()
+                        Logger.info(`Deleted character: ${charName}`)
+                        router.dismissAll()
                     },
                     type: 'warning',
                 },
             ],
         })
     }
+
+    useEffect(() => {
+        return () => {
+            if (!chat) unloadCharacter()
+        }
+    }, [])
 
     const handleDeleteImage = () => {
         Alert.alert({
@@ -162,7 +163,7 @@ const ChracterEditor = () => {
             ...(characterCard?.alternate_greetings ?? []),
             { id: id, greeting: '', character_id: charId },
         ]
-        setCharacterCard({ ...characterCard, alternate_greetings: greetings })
+        setCharacterCardEdited({ ...characterCard, alternate_greetings: greetings })
         if (characterCard.alternate_greetings.length !== 0) {
             setAltSwipeIndex(altSwipeIndex + 1)
         }
@@ -171,7 +172,7 @@ const ChracterEditor = () => {
     const deleteAltMessageRoutine = async () => {
         const id = characterCard?.alternate_greetings[altSwipeIndex].id
         if (!id || !charId) {
-            Logger.log('Error deleting swipe', true)
+            Logger.errorToast('Error deleting swipe')
             return
         }
         await Characters.db.mutate.deleteAltGreeting(id)
@@ -180,7 +181,7 @@ const ChracterEditor = () => {
             (item) => item.id !== id
         )
         setAltSwipeIndex(0)
-        setCharacterCard({ ...characterCard, alternate_greetings: greetings })
+        setCharacterCardEdited({ ...characterCard, alternate_greetings: greetings })
     }
 
     const handleDeleteAltMessage = async () => {
@@ -202,14 +203,13 @@ const ChracterEditor = () => {
 
     return (
         <FadeDownView style={styles.mainContainer}>
-            <Stack.Screen
-                options={{
-                    title: 'Edit Character',
-                }}
-            />
+            <HeaderTitle title="Edit Character" />
             <AvatarViewer editorButton={false} />
             {characterCard && (
-                <ScrollView showsVerticalScrollIndicator={false}>
+                <ScrollView
+                    showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="always"
+                    contentContainerStyle={{ rowGap: 16, paddingBottom: 24 }}>
                     <View style={styles.characterHeader}>
                         <PopupMenu
                             placement="right"
@@ -246,40 +246,33 @@ const ChracterEditor = () => {
                             />
                             <AntDesign
                                 name="edit"
-                                color={Style.getColor('primary-text1')}
+                                color={color.text._100}
                                 style={styles.editHover}
                             />
                         </PopupMenu>
 
                         <View style={styles.characterHeaderInfo}>
                             <View style={styles.buttonContainer}>
-                                <TouchableOpacity
-                                    style={styles.buttonDestructive}
-                                    onPress={deleteCard}>
-                                    <AntDesign
-                                        name="delete"
-                                        size={20}
-                                        color={Style.getColor('primary-text1')}
-                                    />
-                                    <Text style={styles.buttonText}>Delete Character</Text>
-                                </TouchableOpacity>
+                                <ThemedButton
+                                    iconName="delete"
+                                    iconSize={20}
+                                    variant="critical"
+                                    label="Delete"
+                                    onPress={handleDeleteCard}
+                                />
+
                                 {edited && (
-                                    <TouchableOpacity
-                                        style={styles.foregroundButton}
-                                        onPress={savecard}>
-                                        <AntDesign
-                                            name="save"
-                                            size={20}
-                                            color={Style.getColor('primary-text1')}
-                                        />
-                                        <Text style={styles.buttonText}>Save</Text>
-                                    </TouchableOpacity>
+                                    <ThemedButton
+                                        iconName="save"
+                                        iconSize={20}
+                                        label="Save"
+                                        onPress={handleSaveCard}
+                                    />
                                 )}
                             </View>
-                            <TextInput
-                                style={styles.input}
+                            <ThemedTextInput
                                 onChangeText={(mes) => {
-                                    setCharacterCard({
+                                    setCharacterCardEdited({
                                         ...characterCard,
                                         name: mes,
                                     })
@@ -289,17 +282,13 @@ const ChracterEditor = () => {
                         </View>
                     </View>
 
-                    <Text style={styles.boxText}>
-                        Description Tokens: {getTokenCount(characterCard?.description ?? '')}
-                    </Text>
-
-                    <TextInput
+                    <ThemedTextInput
                         scrollEnabled
-                        style={styles.input}
+                        label={`Description Tokens: ${getTokenCount(characterCard?.description ?? '')}`}
                         multiline
                         numberOfLines={8}
                         onChangeText={(mes) => {
-                            setCharacterCard({
+                            setCharacterCardEdited({
                                 ...characterCard,
                                 description: mes,
                             })
@@ -307,13 +296,11 @@ const ChracterEditor = () => {
                         value={characterCard?.description}
                     />
 
-                    <Text style={styles.boxText}>First Message</Text>
-
-                    <TextInput
-                        style={styles.input}
+                    <ThemedTextInput
+                        label="First Message"
                         multiline
                         onChangeText={(mes) => {
-                            setCharacterCard({
+                            setCharacterCardEdited({
                                 ...characterCard,
                                 first_mes: mes,
                             })
@@ -326,15 +313,13 @@ const ChracterEditor = () => {
                         style={{
                             flexDirection: 'row',
                             justifyContent: 'space-between',
-                            marginTop: 24,
-                            marginBottom: 12,
                         }}>
-                        <Text style={{ color: Style.getColor('primary-text2') }}>
-                            Alternate Greetings{'  '}
+                        <Text style={{ color: color.text._100 }}>
+                            Alternate Greetings
                             {characterCard.alternate_greetings.length !== 0 && (
                                 <Text
                                     style={{
-                                        color: Style.getColor('primary-text2'),
+                                        color: color.text._100,
                                     }}>
                                     {altSwipeIndex + 1} / {characterCard.alternate_greetings.length}
                                 </Text>
@@ -344,31 +329,27 @@ const ChracterEditor = () => {
                         <View style={{ flexDirection: 'row', columnGap: 32 }}>
                             <TouchableOpacity onPress={handleDeleteAltMessage}>
                                 {characterCard.alternate_greetings.length !== 0 && (
-                                    <AntDesign
-                                        color={Style.getColor('destructive-brand')}
-                                        name="delete"
-                                        size={20}
-                                    />
+                                    <AntDesign color={color.error._400} name="delete" size={20} />
                                 )}
                             </TouchableOpacity>
-                            <TouchableOpacity
-                                onPress={() => setAltSwipeIndex(Math.max(altSwipeIndex - 1, 0))}>
-                                <AntDesign
-                                    color={Style.getColor(
-                                        altSwipeIndex === 0 ? 'primary-text3' : 'primary-text1'
-                                    )}
-                                    name="left"
-                                    size={20}
-                                />
-                            </TouchableOpacity>
+                            {characterCard.alternate_greetings.length > 0 && (
+                                <TouchableOpacity
+                                    onPress={() =>
+                                        setAltSwipeIndex(Math.max(altSwipeIndex - 1, 0))
+                                    }>
+                                    <AntDesign
+                                        color={
+                                            altSwipeIndex === 0 ? color.text._700 : color.text._100
+                                        }
+                                        name="left"
+                                        size={20}
+                                    />
+                                </TouchableOpacity>
+                            )}
                             {altSwipeIndex === characterCard.alternate_greetings.length - 1 ||
                             characterCard.alternate_greetings.length === 0 ? (
                                 <TouchableOpacity onPress={handleAddAltMessage}>
-                                    <AntDesign
-                                        color={Style.getColor('primary-text1')}
-                                        name="plus"
-                                        size={20}
-                                    />
+                                    <AntDesign color={color.text._100} name="plus" size={20} />
                                 </TouchableOpacity>
                             ) : (
                                 <TouchableOpacity
@@ -380,25 +361,20 @@ const ChracterEditor = () => {
                                             )
                                         )
                                     }>
-                                    <AntDesign
-                                        color={Style.getColor('primary-text1')}
-                                        name="right"
-                                        size={20}
-                                    />
+                                    <AntDesign color={color.text._100} name="right" size={20} />
                                 </TouchableOpacity>
                             )}
                         </View>
                     </View>
 
                     {characterCard.alternate_greetings.length !== 0 ? (
-                        <TextInput
-                            style={styles.input}
+                        <ThemedTextInput
                             multiline
-                            numberOfLines={2}
+                            numberOfLines={8}
                             onChangeText={(mes) => {
                                 const greetings = [...characterCard.alternate_greetings]
                                 greetings[altSwipeIndex].greeting = mes
-                                setCharacterCard({
+                                setCharacterCardEdited({
                                     ...characterCard,
                                     alternate_greetings: greetings,
                                 })
@@ -410,22 +386,23 @@ const ChracterEditor = () => {
                     ) : (
                         <Text
                             style={{
-                                ...styles.input,
-                                color: Style.getColor('primary-text2'),
+                                borderColor: color.neutral._400,
+                                borderWidth: 1,
+                                borderRadius: 8,
+                                padding: spacing.m,
+                                color: color.text._500,
                                 fontStyle: 'italic',
                             }}>
                             No Alternate Greetings
                         </Text>
                     )}
 
-                    <Text style={styles.boxText}>Personality</Text>
-
-                    <TextInput
-                        style={styles.input}
+                    <ThemedTextInput
+                        label="Personality"
                         multiline
                         numberOfLines={2}
                         onChangeText={(mes) => {
-                            setCharacterCard({
+                            setCharacterCardEdited({
                                 ...characterCard,
                                 personality: mes,
                             })
@@ -433,13 +410,11 @@ const ChracterEditor = () => {
                         value={characterCard?.personality}
                     />
 
-                    <Text style={styles.boxText}>Scenario</Text>
-
-                    <TextInput
-                        style={styles.input}
+                    <ThemedTextInput
+                        label="Scenario"
                         multiline
                         onChangeText={(mes) => {
-                            setCharacterCard({
+                            setCharacterCardEdited({
                                 ...characterCard,
                                 scenario: mes,
                             })
@@ -448,13 +423,11 @@ const ChracterEditor = () => {
                         numberOfLines={3}
                     />
 
-                    <Text style={styles.boxText}>Example Messages</Text>
-
-                    <TextInput
-                        style={styles.input}
+                    <ThemedTextInput
+                        label="Example Messages"
                         multiline
                         onChangeText={(mes) => {
-                            setCharacterCard({
+                            setCharacterCardEdited({
                                 ...characterCard,
                                 mes_example: mes,
                             })
@@ -462,103 +435,88 @@ const ChracterEditor = () => {
                         value={characterCard?.mes_example}
                         numberOfLines={8}
                     />
+
+                    <StringArrayEditor
+                        label="Tags"
+                        suggestions={data.data
+                            .map((item) => item.tag)
+                            .filter((a) => !characterCard?.tags.some((item) => item.tag.tag === a))}
+                        showSuggestionsOnEmpty
+                        value={characterCard?.tags.map((item) => item.tag.tag) ?? []}
+                        setValue={(value) => {
+                            const newTags = value
+                                .filter((v) => !characterCard.tags.some((a) => a.tag.tag === v))
+                                .map((a) => {
+                                    const existing = data.data.filter((item) => item.tag === a)?.[0]
+                                    if (existing) {
+                                        return { tag_id: existing.id, tag: existing }
+                                    }
+                                    return { tag_id: -1, tag: { tag: a, id: -1 } }
+                                })
+                            setCharacterCardEdited({
+                                ...characterCard,
+                                tags: [
+                                    ...characterCard.tags.filter((v) =>
+                                        value.some((a) => a === v.tag.tag)
+                                    ),
+                                    ...newTags,
+                                ],
+                            })
+                        }}
+                    />
                 </ScrollView>
             )}
         </FadeDownView>
     )
 }
 
-const styles = StyleSheet.create({
-    mainContainer: {
-        flex: 1,
-        paddingHorizontal: 16,
-        paddingVertical: 16,
-    },
+const useStyles = () => {
+    const { color, spacing, borderRadius } = Theme.useTheme()
+    return StyleSheet.create({
+        mainContainer: {
+            flex: 1,
+            paddingHorizontal: spacing.xl,
+            paddingVertical: spacing.xl,
+        },
 
-    button: {
-        marginRight: 20,
-    },
+        characterHeader: {
+            alignContent: 'flex-start',
+            borderRadius: borderRadius.xl,
+            flexDirection: 'row',
+            alignItems: 'center',
+        },
 
-    characterHeader: {
-        alignContent: 'flex-start',
-        borderRadius: 16,
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
+        characterHeaderInfo: {
+            marginLeft: spacing.xl2,
+            rowGap: 12,
+            flex: 1,
+        },
 
-    characterHeaderInfo: {
-        marginLeft: 24,
-        rowGap: 12,
-        flex: 1,
-    },
+        buttonContainer: {
+            justifyContent: 'flex-start',
+            flexDirection: 'row',
+            columnGap: 4,
+        },
 
-    buttonContainer: {
-        justifyContent: 'flex-start',
-        flexDirection: 'row',
-        columnGap: 4,
-    },
+        avatar: {
+            width: 80,
+            height: 80,
+            borderRadius: borderRadius.xl2,
+            borderColor: color.primary._500,
+            borderWidth: 2,
+        },
 
-    foregroundButton: {
-        flexGrow: 1,
-        flexDirection: 'row',
-        borderColor: Style.getColor('confirm-brand'),
-        backgroundColor: Style.getColor('confirm-brand'),
-        borderWidth: 1,
-        padding: 8,
-        borderRadius: 4,
-        columnGap: 8,
-    },
-
-    buttonDestructive: {
-        flexGrow: 1,
-        flexDirection: 'row',
-        borderColor: Style.getColor('destructive-brand'),
-        backgroundColor: Style.getColor('destructive-brand'),
-        borderWidth: 1,
-        padding: 8,
-        borderRadius: 4,
-        columnGap: 8,
-    },
-
-    buttonText: {
-        color: Style.getColor('primary-text1'),
-    },
-
-    avatar: {
-        width: 80,
-        height: 80,
-        borderRadius: 20,
-        borderColor: Style.getColor('primary-brand'),
-        borderWidth: 2,
-    },
-
-    boxText: {
-        color: Style.getColor('primary-text2'),
-        paddingTop: 24,
-        paddingBottom: 12,
-    },
-
-    input: {
-        color: Style.getColor('primary-text1'),
-        textAlignVertical: 'top',
-        paddingVertical: 8,
-        backgroundColor: Style.getColor('primary-surface1'),
-        borderColor: Style.getColor('primary-brand'),
-        borderRadius: 8,
-        borderWidth: 1,
-        paddingHorizontal: 8,
-    },
-
-    editHover: {
-        position: 'absolute',
-        left: '75%',
-        top: '75%',
-        padding: 8,
-        borderColor: Style.getColor('primary-text3'),
-        borderWidth: 1,
-        backgroundColor: Style.getColor('primary-surface3'),
-        borderRadius: 12,
-    },
-})
+        editHover: {
+            position: 'absolute',
+            left: '75%',
+            top: '75%',
+            padding: spacing.m,
+            borderColor: color.text._700,
+            borderWidth: 1,
+            backgroundColor: color.primary._300,
+            borderRadius: borderRadius.l,
+        },
+    })
+}
 
 export default ChracterEditor
